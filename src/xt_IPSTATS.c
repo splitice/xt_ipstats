@@ -37,7 +37,7 @@ typedef struct ipstat_entry_s {
 	struct ipstat_entry* next;
 	ipstat_directional_counters in;
 	ipstat_directional_counters out;
-	char[8] ip;
+	char ip[8];
 	bool used;
 	bool isnew;
 } ipstat_entry;
@@ -56,14 +56,14 @@ static uint32_t ipv6_hash(const char* ip){
 }
 
 /* Increment a counter */
-static inline void increment_counter(byte_packet_counter* counter, u_int16_t length, uint32_t sampling_rate){
-	counter->packets += sampling_rate;
-	counter->bytes += length * sampling_rate;
+static inline void increment_counter(byte_packet_counter* counter, u_int16_t length){
+	counter->packets ++;
+	counter->bytes += length;
 }
 
 
 /* Increment a counter for a protocol, in a direction */
-static void increment_direction(uint8_t protocol, ipstat_directional_counters* counter, uint16_t length, uint32_t sampling_rate){
+static void increment_direction(uint8_t protocol, ipstat_directional_counters* counter, uint16_t length){
 	byte_packet_counter* bp;
 
 	switch (protocol){
@@ -91,7 +91,7 @@ static void increment_direction(uint8_t protocol, ipstat_directional_counters* c
 		break;
 	}
 
-	increment_counter(bp, length, sampling_rate);
+	increment_counter(bp, length);
 }
 
 static ipstat_entry** allocate_new_null_filled_page()
@@ -106,7 +106,7 @@ static ipstat_entry** allocate_new_null_filled_page()
 
 
 /* Handle an IPv4 packet */
-void ipv4_handler(const u_char* packet, bool incomming, uint32_t sampling_rate)
+void ipv4_handler(const u_char* packet, bool incomming)
 {
 	const struct iphdr* ip;   /* packet structure         */
 	u_int16_t len;               /* length holder            */
@@ -164,7 +164,7 @@ void ipv4_handler(const u_char* packet, bool incomming, uint32_t sampling_rate)
 	
 	counter = incomming ? &c->in : &c->out;
 
-	increment_direction(ip->ip_p, counter, len, sampling_rate);
+	increment_direction(ip->ip_p, counter, len);
 	c->used = true;
 }
 
