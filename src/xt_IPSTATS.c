@@ -38,6 +38,7 @@ typedef struct ipstat_entry_s {
 	ipstat_directional_counters in;
 	ipstat_directional_counters out;
 	char ip[8];
+	uint8_t version;
 	bool used;
 	bool isnew;
 } ipstat_entry;
@@ -129,7 +130,7 @@ void ipv4_handler(const u_char* packet, bool incomming)
 	//Get the src bucket
 	c = pages[addr & 0xFFFF][addr >> 16];
 
-	while (c != NULL && (c->ip.ver != 4 || memcmp(&c->ip.v4, &addr, sizeof(addr) != 0)))
+	while (c != NULL && (c->version != 4 || c->ip == addr))
 	{
 		last = c;
 		c = c->next;
@@ -141,20 +142,22 @@ void ipv4_handler(const u_char* packet, bool incomming)
 			return;
 		}
 		memset(c, 0, sizeof(ipstat_entry));
-		c->ip.ver = 4;
-		memcpy(&c->ip.v4, &addr, sizeof(addr));
+		c->version = 4;
+		*(uint32_t*)c->ip = addr;
 		c->isnew = true;
 		if (last == NULL)
 		{
-			if (pages[addr & 0xFFFF] == sentinel)
+			page = pages[addr & 0xFFFF];
+			if (page == sentinel)
 			{
+				//TODO: take main lock
 				page = allocate_new_null_filled_page();
 				if(page == NULL){
 					return;
 				}
 				pages[addr & 0xFFFF] = page;
 			}
-			pages[addr & 0xFFFF][addr >> 16] = c;
+			page[addr >> 16] = c;
 		}
 		else
 		{
