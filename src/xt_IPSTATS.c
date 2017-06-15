@@ -13,11 +13,12 @@
 #include <net/netfilter/nf_conntrack_zones.h>
 #include "xt_IPSTATS.h"
 
+static DEFINE_SPINLOCK(ipstats_lock);
 
 /* Structure for conting bytes and packets */
 typedef struct byte_packet_counter_s {
-	uint32_t bytes;
-	uint32_t packets;
+	atomic_t bytes;
+	atomic_t packets;
 } byte_packet_counter;
 
 /* Counters for bytes/packets tranferred in a direction */
@@ -41,6 +42,7 @@ typedef struct ipstat_entry_s {
 	uint8_t version;
 	bool used;
 	bool isnew;
+	
 } ipstat_entry;
 
 
@@ -58,8 +60,8 @@ static uint32_t ipv6_hash(const char* ip){
 
 /* Increment a counter */
 static inline void increment_counter(byte_packet_counter* counter, u_int16_t length){
-	counter->packets ++;
-	counter->bytes += length;
+	atomic_inc(&counter->packets);
+	atomic_add(length, &counter->bytes);
 }
 
 
@@ -137,9 +139,10 @@ void ipv4_handler(const u_char* packet, bool incomming)
 	}
 	if (c == NULL)
 	{
+		spin_lock_bh(&ipstats_lock);
 		c = (ipstat_entry*)kmalloc(sizeof(ipstat_entry), GFP_ATOMIC);
 		if(c == NULL){
-			return;
+			goto unlock;
 		}
 		memset(c, 0, sizeof(ipstat_entry));
 		c->version = 4;
@@ -150,10 +153,9 @@ void ipv4_handler(const u_char* packet, bool incomming)
 			page = pages[addr & 0xFFFF];
 			if (page == sentinel)
 			{
-				//TODO: take main lock
 				page = allocate_new_null_filled_page();
 				if(page == NULL){
-					return;
+					goto unlock;
 				}
 				pages[addr & 0xFFFF] = page;
 			}
@@ -163,12 +165,17 @@ void ipv4_handler(const u_char* packet, bool incomming)
 		{
 			last->next = c;
 		}
+		spin_unlock_bh(&ipstats_lock);
 	}
 	
 	counter = incomming ? &c->in : &c->out;
 
 	increment_direction(ip->protocol, counter, len);
 	c->used = true;
+	return;
+	
+unlock:
+	spin_unlock_bh(&ipstats_lock);
 }
 
 static unsigned int
@@ -279,6 +286,20 @@ static int __init xt_ct_tg_init(void)
 static void __exit xt_ct_tg_exit(void)
 {
 	xt_unregister_targets(ipstats_tg_reg, ARRAY_SIZE(ipstats_tg_reg));
+	
+	
+	spin_lock_bh(&ipstats_lock);
+	for(int i=0;i<PAGES;i++){
+		if(pages[i] != sentinel){
+			for(int f=0;f<PAGES;f++){
+				if(pages[i][f] != NULL){
+					kfree(pages[i][f]);
+				}
+			}
+			kfree(pages[i]);
+		}
+	}
+	spin_unlock_bh(&ipstats_lock);
 }
 
 module_init(xt_ct_tg_init);
