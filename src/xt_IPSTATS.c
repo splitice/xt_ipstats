@@ -32,11 +32,12 @@ typedef struct ipstat_directional_counters_s {
 } ipstat_directional_counters;
 
 /* A statistical entry */
+struct ipstat_entry;
 typedef struct ipstat_entry_s {
-	ipstat_entry_s* next;
+	struct ipstat_entry* next;
 	ipstat_directional_counters in;
 	ipstat_directional_counters out;
-	struct ip_address ip;
+	char[8] ip;
 	bool used;
 	bool isnew;
 } ipstat_entry;
@@ -49,8 +50,8 @@ ipstat_entry ** pages[PAGES];  // list of pages,
 							  
 							  
 /* Hash an IPv6 address */
-static uint32_t ipv6_hash(const ipv6_address& ip){
-	uint16_t* twos = (uint16_t*)&ip;
+static uint32_t ipv6_hash(const char* ip){
+	uint16_t* twos = (uint16_t*)ip;
 	return twos[0] ^ twos[1] ^ twos[2] ^ twos[3] ^ ((twos[4] ^ twos[5] ^ twos[6] ^ twos[7]) >> 16);
 }
 
@@ -95,7 +96,10 @@ static void increment_direction(uint8_t protocol, ipstat_directional_counters* c
 
 static ipstat_entry** allocate_new_null_filled_page()
 {
-	ipstat_entry** page = (ipstat_entry**)malloc(sizeof(ipstat_entry*) * PAGES) ;
+	ipstat_entry** page = (ipstat_entry**)kmalloc(sizeof(ipstat_entry*) * PAGES, GFP_ATOMIC) ;
+	if(page == NULL){
+		return NULL;
+	}
 	memset(page, 0, sizeof(ipstat_entry*) * PAGES);
 	return page;
 }
@@ -104,28 +108,26 @@ static ipstat_entry** allocate_new_null_filled_page()
 /* Handle an IPv4 packet */
 void ipv4_handler(const u_char* packet, bool incomming, uint32_t sampling_rate)
 {
-	const struct ipv4_header* ip;   /* packet structure         */
-	u_int version;               /*  version                 */
+	const struct iphdr* ip;   /* packet structure         */
 	u_int16_t len;               /* length holder            */
-	u_int32_t addr_idx;
 	ipstat_entry* c;
 	ipstat_entry* last = NULL;
 	ipstat_directional_counters* counter;
+	uint32_t addr;
+	ipstat_entry** page;
 
 	//IP Header
-	ip = (struct ipv4_header*)(packet + sizeof(struct ether_header));
-	len = ntohs(ip->ip_len); /* get packet length */
-	version = IP_V(ip);          /* get ip version    */
-
-	if (version != 4){
+	ip = (struct iphdr*)packet;
+	len = ntohs(ip->tot_len); /* get packet length */
+	
+	if (ip->version != 4){
 		return;
 	}
 	
-	struct ipv4_address addr = incomming ? ip->ip_dst : ip->ip_src;
+	addr = incomming ? ip->daddr : ip->saddr;
 
 	//Get the src bucket
-	addr_idx = IPV4_UINT32(addr);
-	c = pages[addr_idx & 0xFFFF][addr_idx >> 16];
+	c = pages[addr & 0xFFFF][addr >> 16];
 
 	while (c != NULL && (c->ip.ver != 4 || memcmp(&c->ip.v4, &addr, sizeof(addr) != 0)))
 	{
@@ -134,18 +136,25 @@ void ipv4_handler(const u_char* packet, bool incomming, uint32_t sampling_rate)
 	}
 	if (c == NULL)
 	{
-		c = (ipstat_entry*)malloc(sizeof(ipstat_entry));
+		c = (ipstat_entry*)kmalloc(sizeof(ipstat_entry), GFP_ATOMIC);
+		if(c == NULL){
+			return;
+		}
 		memset(c, 0, sizeof(ipstat_entry));
 		c->ip.ver = 4;
 		memcpy(&c->ip.v4, &addr, sizeof(addr));
 		c->isnew = true;
 		if (last == NULL)
 		{
-			if (pages[addr_idx & 0xFFFF] == sentinel)
+			if (pages[addr & 0xFFFF] == sentinel)
 			{
-				pages[addr_idx & 0xFFFF] = allocate_new_null_filled_page();
+				page = allocate_new_null_filled_page();
+				if(page == NULL){
+					return;
+				}
+				pages[addr & 0xFFFF] = page;
 			}
-			pages[addr_idx & 0xFFFF][addr_idx >> 16] = c;
+			pages[addr & 0xFFFF][addr >> 16] = c;
 		}
 		else
 		{
@@ -162,8 +171,6 @@ void ipv4_handler(const u_char* packet, bool incomming, uint32_t sampling_rate)
 static unsigned int
 ipstats_tg4(struct sk_buff *skb, u8 direction_in)
 {
-	const struct xt_ipstats_target_info *info = par->targinfo;
-	
 	ipv4_handler(skb_network_header(skb), direction_in);
 
 	return XT_CONTINUE;
@@ -172,8 +179,6 @@ ipstats_tg4(struct sk_buff *skb, u8 direction_in)
 static unsigned int
 ipstats_tg6(struct sk_buff *skb, u8 direction_in)
 {
-	const struct xt_ipstats_target_info *info = par->targinfo;
-	
 	//ipv4_handler(skb_network_header(skb), direction_in);
 
 	return XT_CONTINUE;
