@@ -95,7 +95,7 @@ static void increment_direction(uint8_t protocol, ipstat_directional_counters* c
 	increment_counter(bp, length);
 }
 
-static ipstat_entry** allocate_new_null_filled_page()
+static ipstat_entry** allocate_new_null_filled_page(void)
 {
 	ipstat_entry** page = (ipstat_entry**)kmalloc(sizeof(ipstat_entry*) * PAGES, GFP_ATOMIC) ;
 	if(page == NULL){
@@ -167,7 +167,7 @@ void ipv4_handler(const u_char* packet, bool incomming)
 	
 	counter = incomming ? &c->in : &c->out;
 
-	increment_direction(ip->ip_p, counter, len);
+	increment_direction(ip->protocol, counter, len);
 	c->used = true;
 }
 
@@ -218,7 +218,7 @@ static void xt_ipstats_tg_destroy_v0(const struct xt_tgdtor_param *par)
 {
 }
 
-static struct xt_target[] ipstats_tg_reg __read_mostly = {
+static struct xt_target ipstats_tg_reg[] __read_mostly = {
 	{
 	.name		= "IPSTATS",
 	.revision	= 0,
@@ -269,7 +269,7 @@ static int __init xt_ct_tg_init(void)
 {
 	int ret;
 
-	ret = xt_register_target(&ipstats_tg_reg);
+	ret = xt_register_targets(ipstats_tg_reg, ARRAY_SIZE(ipstats_tg_reg));
 	if (ret < 0)
 		return ret;
 
@@ -278,7 +278,7 @@ static int __init xt_ct_tg_init(void)
 
 static void __exit xt_ct_tg_exit(void)
 {
-	xt_unregister_target(&ipstats_tg_reg);
+	xt_unregister_targets(ipstats_tg_reg, ARRAY_SIZE(ipstats_tg_reg));
 }
 
 module_init(xt_ct_tg_init);
