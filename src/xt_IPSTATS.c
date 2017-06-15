@@ -130,7 +130,7 @@ void ipv4_handler(const u_char* packet, bool incomming)
 	//Get the src bucket
 	c = pages[addr & 0xFFFF][addr >> 16];
 
-	while (c != NULL && (c->version != 4 || c->ip == addr))
+	while (c != NULL && (c->version != 4 || *(uint32_t*)c->ip == addr))
 	{
 		last = c;
 		c = c->next;
