@@ -227,7 +227,7 @@ static struct xt_target ipstats_tg_reg[] __read_mostly = {
 	.target		= ipstats_tg_in4,
 	.destroy	= xt_ipstats_tg_destroy_v0,
 	.targetsize     = sizeof(struct xt_ipstats_target_info),
-	.hooks		= 1 << NF_INET_PRE_ROUTING | 1 << NF_INET_IN,
+	.hooks		= 1 << NF_INET_PRE_ROUTING | 1 << NF_INET_LOCAL_IN,
 	.me		= THIS_MODULE,
 	},
 	{
@@ -238,7 +238,7 @@ static struct xt_target ipstats_tg_reg[] __read_mostly = {
 	.target		= ipstats_tg_out4,
 	.destroy	= xt_ipstats_tg_destroy_v0,
 	.targetsize     = sizeof(struct xt_ipstats_target_info),
-	.hooks		= 1 << NF_INET_PRE_ROUTING | 1 << NF_INET_OUT,
+	.hooks		= 1 << NF_INET_PRE_ROUTING | 1 << NF_INET_LOCAL_OUT,
 	.me		= THIS_MODULE,
 	},
 	{
@@ -249,7 +249,7 @@ static struct xt_target ipstats_tg_reg[] __read_mostly = {
 	.target		= ipstats_tg_in6,
 	.destroy	= xt_ipstats_tg_destroy_v0,
 	.targetsize     = sizeof(struct xt_ipstats_target_info),
-	.hooks		= 1 << NF_INET_PRE_ROUTING | 1 << NF_INET_IN,
+	.hooks		= 1 << NF_INET_PRE_ROUTING | 1 << NF_INET_LOCAL_IN,
 	.me		= THIS_MODULE,
 	},
 	{
@@ -260,7 +260,7 @@ static struct xt_target ipstats_tg_reg[] __read_mostly = {
 	.target		= ipstats_tg_out6,
 	.destroy	= xt_ipstats_tg_destroy_v0,
 	.targetsize     = sizeof(struct xt_ipstats_target_info),
-	.hooks		= 1 << NF_INET_PRE_ROUTING | 1 << NF_INET_OUT,
+	.hooks		= 1 << NF_INET_PRE_ROUTING | 1 << NF_INET_LOCAL_OUT,
 	.me		= THIS_MODULE,
 	}
 };
