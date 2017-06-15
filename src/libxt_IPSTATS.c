@@ -31,9 +31,9 @@ static struct xtables_target ct_target_reg[] = {
 		.name          = "IPSTATS",
 		.revision      = 0,
 		.version       = XTABLES_VERSION,
-		.size          = XT_ALIGN(sizeof(struct xt_nocreate_target_info)),
+		.size          = XT_ALIGN(sizeof(struct xt_ipstats_target_info)),
      	.save		   = ct_save,
-		.userspacesize = offsetof(struct xt_nocreate_target_info, ct),
+		.userspacesize = offsetof(struct xt_ipstats_target_info, ct),
 	}
 };
 
