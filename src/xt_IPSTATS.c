@@ -285,13 +285,13 @@ static int __init xt_ct_tg_init(void)
 
 static void __exit xt_ct_tg_exit(void)
 {
+	int i, f;
 	xt_unregister_targets(ipstats_tg_reg, ARRAY_SIZE(ipstats_tg_reg));
 	
-	
 	spin_lock_bh(&ipstats_lock);
-	for(int i=0;i<PAGES;i++){
+	for(i=0;i<PAGES;i++){
 		if(pages[i] != sentinel){
-			for(int f=0;f<PAGES;f++){
+			for(f=0;f<PAGES;f++){
 				if(pages[i][f] != NULL){
 					kfree(pages[i][f]);
 				}
