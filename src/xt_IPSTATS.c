@@ -140,6 +140,15 @@ void ipv4_handler(const u_char* packet, bool incomming)
 	if (c == NULL)
 	{
 		spin_lock_bh(&ipstats_lock);
+		
+		//Repeat search, it may have changed while waiting on lock
+		c = pages[addr & 0xFFFF][addr >> 16];
+		while (c != NULL && (c->version != 4 || *(uint32_t*)c->ip == addr))
+		{
+			last = c;
+			c = c->next;
+		}
+		
 		c = (ipstat_entry*)kmalloc(sizeof(ipstat_entry), GFP_ATOMIC);
 		if(c == NULL){
 			goto unlock;
@@ -248,6 +257,178 @@ static struct xt_target ipstats_tg_reg[] __read_mostly = {
 	.hooks		= 1 << NF_INET_PRE_ROUTING | 1 << NF_INET_LOCAL_IN | 1 << NF_INET_LOCAL_OUT,
 	.me		= THIS_MODULE,
 	}
+};
+
+
+/* PROC stuff */
+static void *dl_seq_start(struct seq_file *s, loff_t *pos)
+	__acquires(htable->lock)
+{
+	struct xt_hashroute_htable *htable = s->private;
+	unsigned int *bucket;
+
+	spin_lock_bh(&htable->lock);
+	if (*pos >= htable->cfg.size)
+		return NULL;
+
+	bucket = kmalloc(sizeof(unsigned int), GFP_ATOMIC);
+	if (!bucket)
+		return ERR_PTR(-ENOMEM);
+
+	*bucket = *pos;
+	return bucket;
+}
+
+static void *dl_seq_next(struct seq_file *s, void *v, loff_t *pos)
+{
+	struct xt_hashroute_htable *htable = s->private;
+	unsigned int *bucket = (unsigned int *)v;
+
+	*pos = ++(*bucket);
+	if (*pos >= htable->cfg.size) {
+		kfree(v);
+		return NULL;
+	}
+	return bucket;
+}
+
+static void dl_seq_stop(struct seq_file *s, void *v)
+	__releases(htable->lock)
+{
+	struct xt_hashroute_htable *htable = s->private;
+	unsigned int *bucket = (unsigned int *)v;
+
+	if (!IS_ERR(bucket))
+		kfree(bucket);
+	spin_unlock_bh(&htable->lock);
+}
+
+static void dl_seq_print(struct ipstat_entry_s *c, struct seq_file *s)
+{
+	switch (c->version) {
+	case 4:
+		seq_printf(s, "IN %pI4 ", c->ip);
+		break;
+#if IS_ENABLED(CONFIG_IP6_NF_IPTABLES)
+	case 6:
+		seq_printf(s, "IN %pI6 ", c->ip);
+		break;
+#endif
+	default:
+		BUG();
+	}
+	
+	if (c->isnew && prev_time != 0)
+	{
+		seq_write(s, "0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+	}else{
+		//DIR TCP UDP GRE IPIP ICMP IPSEC OTHER
+		seq_printf(s, "%" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 "\n",
+		atomic_get(&c->in.tcp.packets),
+		atomic_get(&c->in.tcp.bytes),
+		atomic_get(&c->in.udp.packets),
+		atomic_get(&c->in.udp.bytes),
+		atomic_get(&c->in.gre.packets),
+		atomic_get(&c->in.gre.bytes),
+		atomic_get(&c->in.ipip.packets),
+		atomic_get(&c->in.ipip.bytes),
+		atomic_get(&c->in.icmp.packets),
+		atomic_get(&c->in.icmp.bytes),
+		atomic_get(&c->in.ipsec.packets),
+		atomic_get(&c->in.ipsec.bytes),
+		atomic_get(&c->in.other.packets),
+		atomic_get(&c->in.other.bytes));
+	}
+	
+	switch (c->version) {
+	case 4:
+		seq_printf(s, "OUT %pI4 ", c->ip);
+		break;
+#if IS_ENABLED(CONFIG_IP6_NF_IPTABLES)
+	case 6:
+		seq_printf(s, "OUT %pI6 ", c->ip);
+		break;
+#endif
+	default:
+		BUG();
+	}
+		
+	if (c->isnew && prev_time != 0)
+	{
+		seq_write(s,"0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+		c->isnew = false;
+	}else{		
+		seq_printf(s, "%" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 "\n",
+			atomic_get(&c->out.tcp.packets),
+			atomic_get(&c->out.tcp.bytes),
+			atomic_get(&c->out.udp.packets),
+			atomic_get(&c->out.udp.bytes),
+			atomic_get(&c->out.gre.packets),
+			atomic_get(&c->out.gre.bytes),
+			atomic_get(&c->out.ipip.packets),
+			atomic_get(&c->out.ipip.bytes),
+			atomic_get(&c->out.icmp.packets),
+			atomic_get(&c->out.icmp.bytes),
+			atomic_get(&c->out.ipsec.packets),
+			atomic_get(&c->out.ipsec.bytes),
+			atomic_get(&c->out.other.packets),
+			atomic_get(&c->out.other.bytes));
+	}
+}
+
+static inline int dl_seq_real_show(struct dsthash_ent *ent, u_int8_t family,
+			    struct seq_file *s)
+{
+	dl_seq_print(ent, family, s);
+	return seq_has_overflowed(s);
+}
+
+static int dl_seq_show(struct seq_file *s, void *v)
+{
+	struct xt_hashroute_htable *htable = s->private;
+	unsigned int *bucket = (unsigned int *)v;
+	struct dsthash_ent *ent;
+
+	for(i=0;i<PAGES;i++){
+		if(pages[i] != sentinel){
+			for(f=0;f<PAGES;f++){
+				if(pages[i][f] != NULL){
+					if (dl_seq_real_show(pages[i][f], s))
+						return -1;
+				}
+			}
+		}
+	}
+	
+	return 0;
+}
+
+
+static const struct seq_operations dl_seq_ops = {
+	.start = dl_seq_start,
+	.next  = dl_seq_next,
+	.stop  = dl_seq_stop,
+	.show  = dl_seq_show
+};
+
+static int dl_proc_open(struct inode *inode, struct file *file)
+{
+	int ret = seq_open(file, &dl_seq_ops);
+
+	if (!ret) {
+		struct seq_file *sf = file->private_data;
+
+		sf->private = PDE_DATA(inode);
+	}
+	return ret;
+}
+
+static const struct file_operations dl_file_ops = {
+	.owner   = THIS_MODULE,
+	.open    = dl_proc_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = seq_release
 };
 
 static int __init xt_ct_tg_init(void)
