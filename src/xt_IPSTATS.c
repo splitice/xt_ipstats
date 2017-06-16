@@ -42,7 +42,7 @@ typedef struct ipstat_entry_s {
 	ipstat_directional_counters in;
 	ipstat_directional_counters out;
 	char ip[8];
-	uint8_t version;
+	u8 version;
 	bool used;
 	bool isnew;
 	
@@ -67,8 +67,8 @@ ipstat_entry *sentinel[PAGES] = { 0 };  // sentinel page, initialized to NULLs.
 							  
 							  
 /* Hash an IPv6 address */
-static uint32_t ipv6_hash(const char* ip){
-	uint16_t* twos = (uint16_t*)ip;
+static u32 ipv6_hash(const char* ip){
+	u16* twos = (u16_t*)ip;
 	return twos[0] ^ twos[1] ^ twos[2] ^ twos[3] ^ ((twos[4] ^ twos[5] ^ twos[6] ^ twos[7]) >> 16);
 }
 
@@ -80,7 +80,7 @@ static inline void increment_counter(byte_packet_counter* counter, u_int16_t len
 
 
 /* Increment a counter for a protocol, in a direction */
-static void increment_direction(uint8_t protocol, ipstat_directional_counters* counter, uint16_t length){
+static void increment_direction(u8_t protocol, ipstat_directional_counters* counter, u16_t length){
 	byte_packet_counter* bp;
 
 	switch (protocol){
@@ -130,7 +130,7 @@ void ipv4_handler(const u_char* packet, bool incomming, ipstat_entry *** pages)
 	ipstat_entry* c;
 	ipstat_entry* last = NULL;
 	ipstat_directional_counters* counter;
-	uint32_t addr;
+	u32 addr;
 	ipstat_entry** page;
 
 	//IP Header
@@ -146,7 +146,7 @@ void ipv4_handler(const u_char* packet, bool incomming, ipstat_entry *** pages)
 	//Get the src bucket
 	c = pages[addr & 0xFFFF][addr >> 16];
 
-	while (c != NULL && (c->version != 4 || *(uint32_t*)c->ip == addr))
+	while (c != NULL && (c->version != 4 || *(u32*)c->ip == addr))
 	{
 		last = c;
 		c = c->next;
@@ -157,7 +157,7 @@ void ipv4_handler(const u_char* packet, bool incomming, ipstat_entry *** pages)
 		
 		//Repeat search, it may have changed while waiting on lock
 		c = pages[addr & 0xFFFF][addr >> 16];
-		while (c != NULL && (c->version != 4 || *(uint32_t*)c->ip == addr))
+		while (c != NULL && (c->version != 4 || *(u32*)c->ip == addr))
 		{
 			last = c;
 			c = c->next;
@@ -169,7 +169,7 @@ void ipv4_handler(const u_char* packet, bool incomming, ipstat_entry *** pages)
 		}
 		memset(c, 0, sizeof(ipstat_entry));
 		c->version = 4;
-		*(uint32_t*)c->ip = addr;
+		*(u32*)c->ip = addr;
 		c->isnew = true;
 		if (last == NULL)
 		{
@@ -337,21 +337,21 @@ static void dl_seq_print(struct ipstat_entry_s *c, struct seq_file *s)
 		seq_puts(s, "0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
 	}else{
 		//DIR TCP UDP GRE IPIP ICMP IPSEC OTHER
-		seq_printf(s, "%" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 "\n",
-		(uint32_t)atomic_get(&c->in.tcp.packets),
-		(uint32_t)atomic_get(&c->in.tcp.bytes),
-		(uint32_t)atomic_get(&c->in.udp.packets),
-		(uint32_t)atomic_get(&c->in.udp.bytes),
-		(uint32_t)atomic_get(&c->in.gre.packets),
-		(uint32_t)atomic_get(&c->in.gre.bytes),
-		(uint32_t)atomic_get(&c->in.ipip.packets),
-		(uint32_t)atomic_get(&c->in.ipip.bytes),
-		(uint32_t)atomic_get(&c->in.icmp.packets),
-		(uint32_t)atomic_get(&c->in.icmp.bytes),
-		(uint32_t)atomic_get(&c->in.ipsec.packets),
-		(uint32_t)atomic_get(&c->in.ipsec.bytes),
-		(uint32_t)atomic_get(&c->in.other.packets),
-		(uint32_t)atomic_get(&c->in.other.bytes));
+		seq_printf(s, "%u %u %u %u %u %u %u %u %u %u %u %u %u %u\n",
+		(u32)atomic_get(&c->in.tcp.packets),
+		(u32)atomic_get(&c->in.tcp.bytes),
+		(u32)atomic_get(&c->in.udp.packets),
+		(u32)atomic_get(&c->in.udp.bytes),
+		(u32)atomic_get(&c->in.gre.packets),
+		(u32)atomic_get(&c->in.gre.bytes),
+		(u32)atomic_get(&c->in.ipip.packets),
+		(u32)atomic_get(&c->in.ipip.bytes),
+		(u32)atomic_get(&c->in.icmp.packets),
+		(u32)atomic_get(&c->in.icmp.bytes),
+		(u32)atomic_get(&c->in.ipsec.packets),
+		(u32)atomic_get(&c->in.ipsec.bytes),
+		(u32)atomic_get(&c->in.other.packets),
+		(u32)atomic_get(&c->in.other.bytes));
 	}
 	
 	switch (c->version) {
@@ -372,21 +372,21 @@ static void dl_seq_print(struct ipstat_entry_s *c, struct seq_file *s)
 		seq_puts(s,"0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
 		c->isnew = false;
 	}else{		
-		seq_printf(s, "%" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 "\n",
-			(uint32_t)atomic_get(&c->out.tcp.packets),
-			(uint32_t)atomic_get(&c->out.tcp.bytes),
-			(uint32_t)atomic_get(&c->out.udp.packets),
-			(uint32_t)atomic_get(&c->out.udp.bytes),
-			(uint32_t)atomic_get(&c->out.gre.packets),
-			(uint32_t)atomic_get(&c->out.gre.bytes),
-			(uint32_t)atomic_get(&c->out.ipip.packets),
-			(uint32_t)atomic_get(&c->out.ipip.bytes),
-			(uint32_t)atomic_get(&c->out.icmp.packets),
-			(uint32_t)atomic_get(&c->out.icmp.bytes),
-			(uint32_t)atomic_get(&c->out.ipsec.packets),
-			(uint32_t)atomic_get(&c->out.ipsec.bytes),
-			(uint32_t)atomic_get(&c->out.other.packets),
-			(uint32_t)atomic_get(&c->out.other.bytes));
+		seq_printf(s, "%u %u %u %u %u %u %u %u %u %u %u %u %u %u\n",
+			(u32)atomic_get(&c->out.tcp.packets),
+			(u32)atomic_get(&c->out.tcp.bytes),
+			(u32)atomic_get(&c->out.udp.packets),
+			(u32)atomic_get(&c->out.udp.bytes),
+			(u32)atomic_get(&c->out.gre.packets),
+			(u32)atomic_get(&c->out.gre.bytes),
+			(u32)atomic_get(&c->out.ipip.packets),
+			(u32)atomic_get(&c->out.ipip.bytes),
+			(u32)atomic_get(&c->out.icmp.packets),
+			(u32)atomic_get(&c->out.icmp.bytes),
+			(u32)atomic_get(&c->out.ipsec.packets),
+			(u32)atomic_get(&c->out.ipsec.bytes),
+			(u32)atomic_get(&c->out.other.packets),
+			(u32)atomic_get(&c->out.other.bytes));
 	}
 }
 
