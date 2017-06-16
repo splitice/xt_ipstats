@@ -45,11 +45,22 @@ typedef struct ipstat_entry_s {
 	
 } ipstat_entry;
 
-
 #define PAGES 65536
+
+struct ipstats_net {
+	struct proc_dir_entry *pde;
+	ipstat_entry ** pages[PAGES];  // list of pages,
+    // initialized so every element points to sentinel
+};
+
+static unsigned int ipstats_net_id;
+static inline struct ipstats_net *ipstats_pernet(struct net *net)
+{
+	return net_generic(net, ipstats_net_id);
+}
+
+
 ipstat_entry *sentinel[PAGES] = { 0 };  // sentinel page, initialized to NULLs.
-ipstat_entry ** pages[PAGES];  // list of pages,
-                              // initialized so every element points to sentinel
 							  
 							  
 /* Hash an IPv6 address */
@@ -109,7 +120,7 @@ static ipstat_entry** allocate_new_null_filled_page(void)
 
 
 /* Handle an IPv4 packet */
-void ipv4_handler(const u_char* packet, bool incomming)
+void ipv4_handler(const u_char* packet, bool incomming, ipstat_entry *** pages)
 {
 	const struct iphdr* ip;   /* packet structure         */
 	u_int16_t len;               /* length holder            */
@@ -188,15 +199,15 @@ unlock:
 }
 
 static unsigned int
-ipstats_tg4(struct sk_buff *skb, u8 direction_in)
+ipstats_tg4(struct sk_buff *skb, u8 direction_in, struct ipstats_net* inet)
 {
-	ipv4_handler(skb_network_header(skb), direction_in);
+	ipv4_handler(skb_network_header(skb), direction_in, inet->pages);
 
 	return XT_CONTINUE;
 }
 
 static unsigned int
-ipstats_tg6(struct sk_buff *skb, u8 direction_in)
+ipstats_tg6(struct sk_buff *skb, u8 direction_in, struct ipstats_net* inet)
 {
 	//ipv4_handler(skb_network_header(skb), direction_in);
 
@@ -204,19 +215,19 @@ ipstats_tg6(struct sk_buff *skb, u8 direction_in)
 }
 
 static unsigned int ipstats_tg_in4(struct sk_buff *skb, const struct xt_action_param *par){
-	return ipstats_tg4(skb, 1);
+	return ipstats_tg4(skb, 1, ipstats_pernet(par->net));
 }
 
 static unsigned int ipstats_tg_out4(struct sk_buff *skb, const struct xt_action_param *par){
-	return ipstats_tg4(skb, 0);
+	return ipstats_tg4(skb, 0, ipstats_pernet(par->net));
 }
 
 static unsigned int ipstats_tg_in6(struct sk_buff *skb, const struct xt_action_param *par){
-	return ipstats_tg6(skb, 1);
+	return ipstats_tg6(skb, 1, ipstats_pernet(par->net));
 }
 
 static unsigned int ipstats_tg_out6(struct sk_buff *skb, const struct xt_action_param *par){
-	return ipstats_tg6(skb, 0);
+	return ipstats_tg6(skb, 0, ipstats_pernet(par->net));
 }
 
 static int ipstats_chk(const struct xt_tgchk_param *par)
@@ -264,7 +275,7 @@ static struct xt_target ipstats_tg_reg[] __read_mostly = {
 static void *dl_seq_start(struct seq_file *s, loff_t *pos)
 	__acquires(htable->lock)
 {
-	struct xt_hashroute_htable *htable = s->private;
+	struct xt_ipstats_htable *htable = s->private;
 	unsigned int *bucket;
 
 	spin_lock_bh(&htable->lock);
@@ -281,7 +292,7 @@ static void *dl_seq_start(struct seq_file *s, loff_t *pos)
 
 static void *dl_seq_next(struct seq_file *s, void *v, loff_t *pos)
 {
-	struct xt_hashroute_htable *htable = s->private;
+	struct xt_ipstats_htable *htable = s->private;
 	unsigned int *bucket = (unsigned int *)v;
 
 	*pos = ++(*bucket);
@@ -295,7 +306,7 @@ static void *dl_seq_next(struct seq_file *s, void *v, loff_t *pos)
 static void dl_seq_stop(struct seq_file *s, void *v)
 	__releases(htable->lock)
 {
-	struct xt_hashroute_htable *htable = s->private;
+	struct xt_ipstats_htable *htable = s->private;
 	unsigned int *bucket = (unsigned int *)v;
 
 	if (!IS_ERR(bucket))
@@ -385,7 +396,7 @@ static inline int dl_seq_real_show(struct dsthash_ent *ent, u_int8_t family,
 
 static int dl_seq_show(struct seq_file *s, void *v)
 {
-	struct xt_hashroute_htable *htable = s->private;
+	struct xt_ipstats_htable *htable = s->private;
 	unsigned int *bucket = (unsigned int *)v;
 	struct dsthash_ent *ent;
 
@@ -431,11 +442,64 @@ static const struct file_operations dl_file_ops = {
 	.release = seq_release
 };
 
+
+
+static int __net_init ipstats_proc_net_init(struct net *net)
+{
+	struct ipstats_net *ipstats_net = ipstats_pernet(net);
+
+	hinfo->pde = proc_create_data("ipstats", 0, NULL, &dl_file_ops, hinfo);
+		
+	return 0;
+}
+
+static void __net_exit ipstats_proc_net_exit(struct net *net)
+{
+	remove_proc_entry("ipstats",net);
+}
+
+static int __net_init ipstats_net_init(struct net *net)
+{
+	return ipstats_proc_net_init(net);
+}
+
+static void __net_exit ipstats_net_exit(struct net *net)
+{
+	struct ipstats_net *ipstats_net = ipstats_pernet(net);	
+	
+	spin_lock_bh(&ipstats_lock);
+	for(i=0;i<PAGES;i++){
+		if(ipstats_net->pages[i] != sentinel){
+			for(f=0;f<PAGES;f++){
+				if(ipstats_net->pages[i][f] != NULL){
+					kfree(ipstats_net->pages[i][f]);
+				}
+			}
+			kfree(pages[i]);
+		}
+	}
+	spin_unlock_bh(&ipstats_lock);
+	
+	ipstats_proc_net_exit(net);
+}
+
+static struct pernet_operations ipstats_net_ops = {
+	.init	= ipstats_net_init,
+	.exit	= ipstats_net_exit,
+	.id	= &ipstats_net_id,
+	.size	= sizeof(struct ipstats_net),
+};
+
 static int __init xt_ct_tg_init(void)
 {
 	int ret;
 
 	ret = xt_register_targets(ipstats_tg_reg, ARRAY_SIZE(ipstats_tg_reg));
+	if (ret < 0)
+		return ret;
+	
+	
+	ret = register_pernet_subsys(&ipstats_net_ops);
 	if (ret < 0)
 		return ret;
 
@@ -446,19 +510,7 @@ static void __exit xt_ct_tg_exit(void)
 {
 	int i, f;
 	xt_unregister_targets(ipstats_tg_reg, ARRAY_SIZE(ipstats_tg_reg));
-	
-	spin_lock_bh(&ipstats_lock);
-	for(i=0;i<PAGES;i++){
-		if(pages[i] != sentinel){
-			for(f=0;f<PAGES;f++){
-				if(pages[i][f] != NULL){
-					kfree(pages[i][f]);
-				}
-			}
-			kfree(pages[i]);
-		}
-	}
-	spin_unlock_bh(&ipstats_lock);
+	unregister_pernet_subsys(&ipstats_net_ops);
 }
 
 module_init(xt_ct_tg_init);
