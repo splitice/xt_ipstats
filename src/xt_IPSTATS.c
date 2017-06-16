@@ -11,6 +11,9 @@
 #include <linux/netfilter/x_tables.h>
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_zones.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+#include <inttypes.h>
 #include "xt_IPSTATS.h"
 
 static DEFINE_SPINLOCK(ipstats_lock);
@@ -331,24 +334,24 @@ static void dl_seq_print(struct ipstat_entry_s *c, struct seq_file *s)
 	
 	if (c->isnew && prev_time != 0)
 	{
-		seq_write(s, "0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+		seq_puts(s, "0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
 	}else{
 		//DIR TCP UDP GRE IPIP ICMP IPSEC OTHER
 		seq_printf(s, "%" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 "\n",
-		atomic_get(&c->in.tcp.packets),
-		atomic_get(&c->in.tcp.bytes),
-		atomic_get(&c->in.udp.packets),
-		atomic_get(&c->in.udp.bytes),
-		atomic_get(&c->in.gre.packets),
-		atomic_get(&c->in.gre.bytes),
-		atomic_get(&c->in.ipip.packets),
-		atomic_get(&c->in.ipip.bytes),
-		atomic_get(&c->in.icmp.packets),
-		atomic_get(&c->in.icmp.bytes),
-		atomic_get(&c->in.ipsec.packets),
-		atomic_get(&c->in.ipsec.bytes),
-		atomic_get(&c->in.other.packets),
-		atomic_get(&c->in.other.bytes));
+		(uint32_t)atomic_get(&c->in.tcp.packets),
+		(uint32_t)atomic_get(&c->in.tcp.bytes),
+		(uint32_t)atomic_get(&c->in.udp.packets),
+		(uint32_t)atomic_get(&c->in.udp.bytes),
+		(uint32_t)atomic_get(&c->in.gre.packets),
+		(uint32_t)atomic_get(&c->in.gre.bytes),
+		(uint32_t)atomic_get(&c->in.ipip.packets),
+		(uint32_t)atomic_get(&c->in.ipip.bytes),
+		(uint32_t)atomic_get(&c->in.icmp.packets),
+		(uint32_t)atomic_get(&c->in.icmp.bytes),
+		(uint32_t)atomic_get(&c->in.ipsec.packets),
+		(uint32_t)atomic_get(&c->in.ipsec.bytes),
+		(uint32_t)atomic_get(&c->in.other.packets),
+		(uint32_t)atomic_get(&c->in.other.bytes));
 	}
 	
 	switch (c->version) {
@@ -366,24 +369,24 @@ static void dl_seq_print(struct ipstat_entry_s *c, struct seq_file *s)
 		
 	if (c->isnew && prev_time != 0)
 	{
-		seq_write(s,"0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+		seq_puts(s,"0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
 		c->isnew = false;
 	}else{		
 		seq_printf(s, "%" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 " %" PRIu32 "\n",
-			atomic_get(&c->out.tcp.packets),
-			atomic_get(&c->out.tcp.bytes),
-			atomic_get(&c->out.udp.packets),
-			atomic_get(&c->out.udp.bytes),
-			atomic_get(&c->out.gre.packets),
-			atomic_get(&c->out.gre.bytes),
-			atomic_get(&c->out.ipip.packets),
-			atomic_get(&c->out.ipip.bytes),
-			atomic_get(&c->out.icmp.packets),
-			atomic_get(&c->out.icmp.bytes),
-			atomic_get(&c->out.ipsec.packets),
-			atomic_get(&c->out.ipsec.bytes),
-			atomic_get(&c->out.other.packets),
-			atomic_get(&c->out.other.bytes));
+			(uint32_t)atomic_get(&c->out.tcp.packets),
+			(uint32_t)atomic_get(&c->out.tcp.bytes),
+			(uint32_t)atomic_get(&c->out.udp.packets),
+			(uint32_t)atomic_get(&c->out.udp.bytes),
+			(uint32_t)atomic_get(&c->out.gre.packets),
+			(uint32_t)atomic_get(&c->out.gre.bytes),
+			(uint32_t)atomic_get(&c->out.ipip.packets),
+			(uint32_t)atomic_get(&c->out.ipip.bytes),
+			(uint32_t)atomic_get(&c->out.icmp.packets),
+			(uint32_t)atomic_get(&c->out.icmp.bytes),
+			(uint32_t)atomic_get(&c->out.ipsec.packets),
+			(uint32_t)atomic_get(&c->out.ipsec.bytes),
+			(uint32_t)atomic_get(&c->out.other.packets),
+			(uint32_t)atomic_get(&c->out.other.bytes));
 	}
 }
 
@@ -465,6 +468,7 @@ static int __net_init ipstats_net_init(struct net *net)
 
 static void __net_exit ipstats_net_exit(struct net *net)
 {
+	int i, f;
 	struct ipstats_net *ipstats_net = ipstats_pernet(net);	
 	
 	spin_lock_bh(&ipstats_lock);
@@ -508,7 +512,6 @@ static int __init xt_ct_tg_init(void)
 
 static void __exit xt_ct_tg_exit(void)
 {
-	int i, f;
 	xt_unregister_targets(ipstats_tg_reg, ARRAY_SIZE(ipstats_tg_reg));
 	unregister_pernet_subsys(&ipstats_net_ops);
 }
