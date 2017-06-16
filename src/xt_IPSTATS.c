@@ -13,7 +13,6 @@
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <inttypes.h>
 #include "xt_IPSTATS.h"
 
 static DEFINE_SPINLOCK(ipstats_lock);
